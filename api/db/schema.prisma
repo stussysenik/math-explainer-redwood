@@ -1,0 +1,142 @@
+// MathViz Redwood — Prisma Schema
+// Run `yarn rw prisma migrate dev` after editing.
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = "native"
+}
+
+// ─── Conversation ──────────────────────────────────────────────────────────
+// A conversation is a thread of messages. Each session starts a new one.
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String    @default("New Conversation")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  messages Message[]
+
+  @@index([createdAt])
+}
+
+// ─── Message ───────────────────────────────────────────────────────────────
+// A single exchange in a conversation. Role is "user" or "assistant".
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role    String // "user" | "assistant"
+  content String // Plain text content
+
+  // Optional image upload metadata (user messages)
+  hasImage      Boolean @default(false)
+  imageMime     String?
+  imageFilename String?
+  imageSize     Int?
+
+  // Linked solve result (assistant messages)
+  solveResult SolveResult?
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// ─── SolveResult ───────────────────────────────────────────────────────────
+// Full pipeline output. Denormalized Symbol+Proof+Graph for read efficiency.
+model SolveResult {
+  id        String  @id @default(cuid())
+  messageId String  @unique
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  // Pipeline classification
+  mode    String // "computation" | "chat"
+  status  String // "idle" | "computing" | "verifying" | "rendering" | "complete" | "error"
+  adapter String // "stub" | "nim" | "anthropic"
+
+  // Chat mode fields
+  chatReply String?
+  chatSteps String  @default("[]") // JSON array of reasoning steps
+
+  // Symbol (S) — normalized computation result
+  symbolStatement  String?
+  symbolExpression String?
+  symbolLatex      String?
+  symbolGraphExpr  String?
+  symbolSource     String?
+  symbolNotes      String @default("[]") // JSON array
+  symbolRaw        String @default("{}") // JSON blob
+
+  // Proof (L) — verification state
+  proofVerified  Boolean @default(false)
+  proofState     String?
+  proofSummary   String?
+  proofDurationMs Int?
+
+  // Graph (G) — renderable surfaces
+  graphDesmos    String @default("{}") // JSON: { expressions, viewport }
+  graphGeogebra  String @default("{}") // JSON: { command, expression }
+  graphLatexBlock String?
+
+  // Timings
+  timingNlpMs    Int @default(0)
+  timingSympyMs  Int @default(0)
+  timingVerifyMs Int @default(0)
+  timingGraphMs  Int @default(0)
+
+  // Error tracking
+  error String?
+
+  // Engine results for cross-verification audit trail
+  engineResults EngineResult[]
+
+  createdAt DateTime @default(now())
+}
+
+// ─── EngineResult ──────────────────────────────────────────────────────────
+// Individual engine execution results for audit trail and cross-verification.
+model EngineResult {
+  id            String      @id @default(cuid())
+  solveResultId String
+  solveResult   SolveResult @relation(fields: [solveResultId], references: [id], onDelete: Cascade)
+
+  engineName String // "sympy_compute" | "wolfram_alpha" | "octave_compute" | "explain_concept"
+  toolUseId  String?
+  status     String // "success" | "error" | "timeout"
+  result     String @default("{}") // JSON blob
+  durationMs Int    @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([solveResultId])
+}
+
+// ─── LibraryEntry ──────────────────────────────────────────────────────────
+// Composable knowledge base entry.
+model LibraryEntry {
+  id         String  @id @default(cuid())
+  title      String
+  category   String  @default("formula") // formula | pattern | cheat_sheet | proof | chat_history
+  tags       String  @default("[]")      // JSON array
+  references String  @default("[]")      // JSON array of other entry IDs
+  source     String  @default("manual")  // manual | pipeline | import
+  query      String?                     // Original query that generated this
+  body       String  @default("")        // Markdown body with KaTeX
+  metadata   String  @default("{}")      // JSON blob
+
+  solveResultId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([category])
+  @@index([createdAt])
+}

@@ -1,0 +1,20 @@
+# This file contains the configuration settings for your Redwood app.
+# This file is also what makes your Redwood app a Redwood app.
+# If you remove it and try to run `yarn rw dev`, you'll get an error.
+#
+# For the full list of options, see the "App Configuration: redwood.toml" doc:
+# https://redwoodjs.com/docs/app-configuration-redwood-toml
+
+[web]
+  title = "MathViz"
+  port = 8920
+  apiUrl = "/.redwood/functions" # You can customize graphql and dbauth urls individually too: see https://redwoodjs.com/docs/app-configuration-redwood-toml#api-paths
+  includeEnvironmentVariables = [
+    "DESMOS_API_KEY",
+  ]
+[api]
+  port = 8921
+[browser]
+  open = false
+[notifications]
+  versionUpdates = ["latest"]
