@@ -1,122 +1,195 @@
-# README
+<p align="center">
+  <br />
+  <br />
+  <code>&nbsp;M A T H V I Z&nbsp;</code>
+  <br />
+  <br />
+  <em>Verified-first math orchestration</em>
+  <br />
+  <br />
+  <a href="#quick-start"><img alt="Node 20" src="https://img.shields.io/badge/node-20-43853d?style=flat-square&logo=node.js&logoColor=white" /></a>
+  <a href="#tech-stack"><img alt="RedwoodJS 8.9" src="https://img.shields.io/badge/RedwoodJS-8.9-BF4722?style=flat-square&logo=redwoodjs&logoColor=white" /></a>
+  <a href="#tech-stack"><img alt="SymPy" src="https://img.shields.io/badge/SymPy-verified-3B5526?style=flat-square&logo=sympy&logoColor=white" /></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
+</p>
 
-Welcome to [RedwoodJS](https://redwoodjs.com)!
+<br />
 
-> **Prerequisites**
->
-> - Redwood requires [Node.js](https://nodejs.org/en/) (=20.x) and [Yarn](https://yarnpkg.com/)
-> - Are you on Windows? For best results, follow our [Windows development setup](https://redwoodjs.com/docs/how-to/windows-development-setup) guide
+<p align="center">
+  <img src="docs/screenshots/chat-theory.png" alt="MathViz — Fundamental Theorem of Calculus with KaTeX rendering" width="720" />
+</p>
 
-Start by installing dependencies:
+<br />
+
+## What is this?
+
+MathViz is a conversational math solver that handles any advanced engineering mathematics problem — from Kreyszig-level probability to Fourier series — with **every intermediate step verified by SymPy**. Ask in natural language, get textbook-quality output with proofs you can trust.
+
+<br />
+
+## Features
+
+**Solve** &mdash; natural language &rarr; symbolic computation pipeline
+- Any query dynamically routed through NLP (NVIDIA NIM / Anthropic Claude)
+- SymPy verification on every intermediate step &mdash; green badges show `VERIFIED`
+- Step-by-step reasoning with numbered walkthrough
+
+**Render** &mdash; textbook-quality math, not plain text
+- KaTeX for all equations (inline `$...$` and display `$$...$$`)
+- TheoremBox components styled like LaTeX `amsthm` environments
+- Interactive Desmos and GeoGebra graphs
+
+**Stream** &mdash; real-time gate-by-gate progress
+- 6-stage Zod-validated pipeline: Input &rarr; Routing &rarr; SymPy &rarr; Symbol &rarr; Verify &rarr; Graph
+- Live progress indicator as each gate completes
+- Engine diagnostics panel with per-gate timing
+
+**Upload** &mdash; scan textbook problems
+- Paperclip icon to attach images (JPG, PNG, WebP)
+- Vision-capable AI extracts the math problem from photos
+
+<br />
+
+## Architecture
 
 ```
+                    ┌──────────────┐
+                    │  CommandBar  │   natural language + image upload
+                    └──────┬───────┘
+                           │
+                    ┌──────▼───────┐
+                    │  NLP Router  │   NIM / Anthropic / Stub
+                    └──────┬───────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+        ┌─────▼─────┐ ┌───▼────┐ ┌─────▼─────┐
+        │  SymPy    │ │ Verify │ │  Graph    │
+        │  Sidecar  │ │ Steps  │ │  Builder  │
+        │  (8100)   │ │        │ │           │
+        └─────┬─────┘ └───┬────┘ └─────┬─────┘
+              │            │            │
+              └────────────┼────────────┘
+                           │
+                    ┌──────▼───────┐
+                    │  Renderer    │   KaTeX + Desmos + GeoGebra
+                    └──────────────┘
+```
+
+<br />
+
+## Quick Start
+
+**Prerequisites:** Node.js 20, Yarn, Python 3.10+
+
+```bash
+# Clone
+git clone https://github.com/stussysenik/math-explainer-redwood.git
+cd math-explainer-redwood
+
+# Install JS dependencies
 yarn install
-```
 
-Then start the development server:
-
-```
-yarn redwood dev
-```
-
-Your browser should automatically open to [http://localhost:8910](http://localhost:8910) where you'll see the Welcome Page, which links out to many great resources.
-
-> **The Redwood CLI**
->
-> Congratulations on running your first Redwood CLI command! From dev to deploy, the CLI is with you the whole way. And there's quite a few commands at your disposal:
->
-> ```
-> yarn redwood --help
-> ```
->
-> For all the details, see the [CLI reference](https://redwoodjs.com/docs/cli-commands).
-
-## Prisma and the database
-
-Redwood wouldn't be a full-stack framework without a database. It all starts with the schema. Open the [`schema.prisma`](api/db/schema.prisma) file in `api/db` and replace the `UserExample` model with the following `Post` model:
-
-```prisma
-model Post {
-  id        Int      @id @default(autoincrement())
-  title     String
-  body      String
-  createdAt DateTime @default(now())
-}
-```
-
-Redwood uses [Prisma](https://www.prisma.io/), a next-gen Node.js and TypeScript ORM, to talk to the database. Prisma's schema offers a declarative way of defining your app's data models. And Prisma [Migrate](https://www.prisma.io/migrate) uses that schema to make database migrations hassle-free:
-
-```
+# Set up the database
 yarn rw prisma migrate dev
 
-# ...
+# Set up the Python sidecar
+cd sidecar
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cd ..
 
-? Enter a name for the new migration: › create posts
+# Configure environment
+cp .env.example .env
+# Add your API keys to .env:
+#   NVIDIA_NIM_API_KEY=...
+#   ANTHROPIC_API_KEY=...
+#   DESMOS_API_KEY=...
+
+# Run everything (sidecar + Redwood dev server)
+./scripts/dev.sh
 ```
 
-> `rw` is short for `redwood`
+Open [localhost:8920](http://localhost:8920) and start solving.
 
-You'll be prompted for the name of your migration. `create posts` will do.
+<br />
 
-Now let's generate everything we need to perform all the CRUD (Create, Retrieve, Update, Delete) actions on our `Post` model:
+## Screenshots
 
-```
-yarn redwood generate scaffold post
-```
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/computation-verified.png" alt="Computation with step verification" />
+      <br />
+      <sub><b>Computation</b> &mdash; step-by-step with verification</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/chat-theory.png" alt="Theory response with KaTeX" />
+      <br />
+      <sub><b>Theory</b> &mdash; KaTeX-rendered definitions</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/computation-graph.png" alt="Integration with graphing" />
+      <br />
+      <sub><b>Integration</b> &mdash; symbolic result + graph</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/hero-landing.png" alt="Clean landing state" />
+      <br />
+      <sub><b>Landing</b> &mdash; minimal, focused input</sub>
+    </td>
+  </tr>
+</table>
 
-Navigate to [http://localhost:8910/posts/new](http://localhost:8910/posts/new), fill in the title and body, and click "Save".
+<br />
 
-Did we just create a post in the database? Yup! With `yarn rw generate scaffold <model>`, Redwood created all the pages, components, and services necessary to perform all CRUD actions on our posts table.
+## Tech Stack
 
-## Frontend first with Storybook
+| Layer | Technology | Role |
+|-------|-----------|------|
+| Framework | [RedwoodJS](https://redwoodjs.com) 8.9 | Full-stack React + GraphQL + Prisma |
+| Frontend | React 18 + Tailwind CSS 3 | Component rendering |
+| Math | [KaTeX](https://katex.org) | LaTeX equation rendering |
+| Graphs | [Desmos API](https://www.desmos.com/api) + [GeoGebra](https://www.geogebra.org) | Interactive graphing |
+| NLP | NVIDIA NIM / Anthropic Claude | Natural language understanding |
+| Symbolic | [SymPy](https://www.sympy.org) (Python FastAPI sidecar) | Computation + verification |
+| Database | SQLite + Prisma ORM | Conversation persistence |
+| Validation | [Zod](https://zod.dev) | Gate-by-gate schema validation |
 
-Don't know what your data models look like? That's more than ok—Redwood integrates Storybook so that you can work on design without worrying about data. Mockup, build, and verify your React components, even in complete isolation from the backend:
+<br />
 
-```
-yarn rw storybook
-```
-
-Seeing "Couldn't find any stories"? That's because you need a `*.stories.{tsx,jsx}` file. The Redwood CLI makes getting one easy enough—try generating a [Cell](https://redwoodjs.com/docs/cells), Redwood's data-fetching abstraction:
-
-```
-yarn rw generate cell examplePosts
-```
-
-The Storybook server should hot reload and now you'll have four stories to work with. They'll probably look a little bland since there's no styling. See if the Redwood CLI's `setup ui` command has your favorite styling library:
-
-```
-yarn rw setup ui --help
-```
-
-## Testing with Jest
-
-It'd be hard to scale from side project to startup without a few tests. Redwood fully integrates Jest with both the front- and back-ends, and makes it easy to keep your whole app covered by generating test files with all your components and services:
-
-```
-yarn rw test
-```
-
-To make the integration even more seamless, Redwood augments Jest with database [scenarios](https://redwoodjs.com/docs/testing#scenarios) and [GraphQL mocking](https://redwoodjs.com/docs/testing#mocking-graphql-calls).
-
-## Ship it
-
-Redwood is designed for both serverless deploy targets like Netlify and Vercel and serverful deploy targets like Render and AWS:
-
-```
-yarn rw setup deploy --help
-```
-
-Don't go live without auth! Lock down your app with Redwood's built-in, database-backed authentication system ([dbAuth](https://redwoodjs.com/docs/authentication#self-hosted-auth-installation-and-setup)), or integrate with nearly a dozen third-party auth providers:
+## Project Structure
 
 ```
-yarn rw setup auth --help
+math-explainer-redwood/
+├── api/                    # GraphQL API + pipeline
+│   ├── src/lib/pipeline/   # 6-gate orchestrator (Zod-validated)
+│   ├── src/lib/nlpRouter/  # NIM, Anthropic, Stub adapters
+│   ├── src/lib/engines/    # SymPy client
+│   └── src/services/       # Solve mutation + streaming
+├── web/                    # React frontend
+│   ├── src/components/
+│   │   ├── math/           # KaTeXBlock, MathText, DesmosGraph, GeoGebraGraph
+│   │   └── solve/          # CommandBar, StepByStep, TheoremBox, GateProgress
+│   └── src/hooks/          # useSolveStream, useExternalScript
+├── sidecar/                # Python FastAPI (port 8100)
+│   └── math_sidecar/
+│       ├── routers/        # SymPy, Wolfram, Octave endpoints
+│       └── services/       # DSPy router, clients
+└── scripts/
+    └── dev.sh              # One-command dev startup
 ```
 
-## Next Steps
+<br />
 
-The best way to learn Redwood is by going through the comprehensive [tutorial](https://redwoodjs.com/docs/tutorial/foreword) and joining the community (via the [Discourse forum](https://community.redwoodjs.com) or the [Discord server](https://discord.gg/redwoodjs)).
+## License
 
-## Quick Links
+[MIT](LICENSE)
 
-- Stay updated: read [Forum announcements](https://community.redwoodjs.com/c/announcements/5), follow us on [Twitter](https://twitter.com/redwoodjs), and subscribe to the [newsletter](https://redwoodjs.com/newsletter)
-- [Learn how to contribute](https://redwoodjs.com/docs/contributing)
+<br />
+
+<p align="center">
+  <sub>Built with <a href="https://redwoodjs.com">RedwoodJS</a> and <a href="https://www.sympy.org">SymPy</a></sub>
+</p>
