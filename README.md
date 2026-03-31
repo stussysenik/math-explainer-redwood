@@ -23,6 +23,9 @@
 
 ## What is this?
 
+![Demo](demo.gif)
+
+
 MathViz is a conversational math solver that handles any advanced engineering mathematics problem — from Kreyszig-level probability to Fourier series — with **every intermediate step verified by SymPy**. Ask in natural language, get textbook-quality output with proofs you can trust.
 
 <br />
