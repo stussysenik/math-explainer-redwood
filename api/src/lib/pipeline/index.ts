@@ -26,6 +26,7 @@
 import { logger } from 'src/lib/logger'
 
 import { sympyClient } from '../engines/sympyClient'
+import { toolRouteClient } from '../engines/toolRouteClient'
 import { buildGraph } from '../morphisms/graphBuilder'
 import { verify } from '../morphisms/verifier'
 import { getRouter } from '../nlpRouter'
@@ -41,11 +42,13 @@ import {
 import type {
   AIResponse,
   DisplayHints,
+  EngineResultRecord,
   Graph,
   MathQuery,
   NlpRouter,
   PipelineResult,
   SymPyResponse,
+  ToolRoutePlan,
 } from './types'
 
 // ─── Sidecar Config ───────────────────────────────────────────────────────
@@ -82,6 +85,19 @@ function buildQuery(text: string): MathQuery {
     text: text.trim(),
     id: generateId(),
     metadata: {},
+  }
+}
+
+function plannerContext(
+  query: MathQuery,
+  vision?: { base64: string; mime: string }
+): Record<string, unknown> {
+  return {
+    hasVision: Boolean(vision),
+    inputMode: vision ? 'image+text' : 'text',
+    strict_verification: true,
+    preferred_engine: 'sympy',
+    queryLength: query.text.length,
   }
 }
 
@@ -193,6 +209,52 @@ async function executeSympyStep(
   }
 }
 
+async function runToolPlanner(
+  query: MathQuery,
+  notify: NotifyFn,
+  vision?: { base64: string; mime: string }
+): Promise<{ toolRoute?: ToolRoutePlan; engineResult?: EngineResultRecord }> {
+  if (!SIDECAR_ENABLED) {
+    emitGate(notify, 'planner', 'skip', { reason: 'sidecar disabled' })
+    return {}
+  }
+
+  const startMs = Date.now()
+  const routeResult = await toolRouteClient.classify(
+    query.text,
+    plannerContext(query, vision)
+  )
+  const durationMs = Date.now() - startMs
+
+  if (routeResult.ok === false) {
+    emitGate(notify, 'planner', 'fail', { error: routeResult.error })
+    return {
+      engineResult: {
+        engineName: 'tool_router',
+        status: routeResult.error.includes('timeout') ? 'timeout' : 'error',
+        result: { error: routeResult.error },
+        durationMs,
+      },
+    }
+  }
+
+  emitGate(notify, 'planner', 'pass', {
+    backend: routeResult.plan.backend,
+    tools: routeResult.plan.tools,
+    confidence: routeResult.plan.confidence,
+  })
+
+  return {
+    toolRoute: routeResult.plan,
+    engineResult: {
+      engineName: 'tool_router',
+      status: 'success',
+      result: routeResult.plan as unknown as Record<string, unknown>,
+      durationMs,
+    },
+  }
+}
+
 /**
  * Emit a gate event via the notify callback.
  *
@@ -227,6 +289,7 @@ export async function runPipeline(
   const notify = opts.notify ?? (() => {})
 
   const timings = { nlpMs: 0, sympyMs: 0, verifyMs: 0, graphMs: 0 }
+  const engineResults: EngineResultRecord[] = []
 
   // ─── Gate 1: Validate Input ───────────────────────────────────────
   const inputResult = SolveInputSchema.safeParse({
@@ -253,6 +316,7 @@ export async function runPipeline(
       adapter: 'stub',
       usedSidecar: false,
       error: `Input validation failed: ${errorMsg}`,
+      engineResults,
     }
   }
 
@@ -261,6 +325,12 @@ export async function runPipeline(
   // ─── Stage 1: Build Query ──────────────────────────────────────────
   const query = buildQuery(inputResult.data.query)
   notify('query', { queryId: query.id })
+
+  // ─── Stage 1b: Tool Planner / Provenance ───────────────────────────
+  const planner = await runToolPlanner(query, notify, opts.vision)
+  if (planner.engineResult) {
+    engineResults.push(planner.engineResult)
+  }
 
   // ─── Gate 2: NLP Routing ──────────────────────────────────────────
   notify('computing', {})
@@ -287,6 +357,8 @@ export async function runPipeline(
       adapter: 'stub',
       usedSidecar: false,
       error: routeResult.error,
+      toolRoute: planner.toolRoute,
+      engineResults,
     }
   }
 
@@ -339,7 +411,10 @@ export async function runPipeline(
       usedSidecar: false,
       error: null,
       display,
+      tutorSections: aiResponse.tutorSections,
       stepVerificationResults: stepVerificationResults.length > 0 ? stepVerificationResults : undefined,
+      toolRoute: planner.toolRoute,
+      engineResults,
     }
   }
 
@@ -349,6 +424,20 @@ export async function runPipeline(
     aiResponse
   )
   timings.sympyMs = sympyMs
+  if (aiResponse.sympyExecutable) {
+    engineResults.push({
+      engineName: 'sympy_compute',
+      status: sympyResponse.ok ? 'success' : 'error',
+      result: {
+        expression: aiResponse.sympyExecutable,
+        normalizedExpression: sympyResponse.normalizedExpression,
+        latex: sympyResponse.resultLatex,
+        usedSidecar,
+        error: sympyResponse.error,
+      },
+      durationMs: sympyMs,
+    })
+  }
 
   // Validate SymPy response
   const sympyValidation = SymPyResponseSchema.safeParse(sympyResponse)
@@ -369,6 +458,11 @@ export async function runPipeline(
 
   // ─── Gate 4: Build Symbol ─────────────────────────────────────────
   const symbol = buildSymbol(query, aiResponse, sympyResponse)
+  symbol.raw = {
+    ...symbol.raw,
+    tool_route: planner.toolRoute ?? null,
+    engine_results: engineResults,
+  }
 
   // Validate the symbol
   const symbolValidation = SymbolSchema.safeParse(symbol)
@@ -448,6 +542,9 @@ export async function runPipeline(
     usedSidecar,
     error: null,
     display,
+    tutorSections: aiResponse.tutorSections,
     stepVerificationResults: stepVerificationResults.length > 0 ? stepVerificationResults : undefined,
+    toolRoute: planner.toolRoute,
+    engineResults,
   }
 }

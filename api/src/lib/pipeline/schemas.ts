@@ -18,9 +18,19 @@ import { z } from 'zod'
 // ─── Gate 1: Input ──────────────────────────────────────────────────────────
 /** Validates the raw user request before it enters the pipeline. */
 export const SolveInputSchema = z.object({
-  query: z.string().min(1).max(4096),
+  query: z.string().max(4096),
+  conversationId: z.string().optional(),
   imageBase64: z.string().optional(),
   imageMime: z.string().optional(),
+  imageFilename: z.string().optional(),
+}).superRefine((value, ctx) => {
+  if (value.query.trim().length === 0 && !value.imageBase64) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Query is required unless an image is provided.',
+      path: ['query'],
+    })
+  }
 })
 
 // ─── Gate 2: AI Response ────────────────────────────────────────────────────
@@ -35,6 +45,34 @@ export const DisplayHintsSchema = z.object({
   showGraph: false,
   showSteps: true,
   showProof: true,
+})
+
+export const TutorSectionsSchema = z.object({
+  problemMap: z.string().optional(),
+  firstPrinciples: z.string().optional(),
+  formalStatement: z.string().optional(),
+  derivation: z.string().optional(),
+  workedExample: z.string().optional(),
+  misconception: z.string().optional(),
+  takeaways: z.array(z.string()).default([]),
+  checkQuestions: z.array(z.string()).default([]),
+  nextStep: z.string().optional(),
+})
+
+const ToolRouteNameSchema = z.enum([
+  'sympy_compute',
+  'julia_compute',
+  'matlab_compute',
+  'octave_compute',
+  'wolfram_alpha',
+  'explain_concept',
+])
+
+export const ToolRoutePlanSchema = z.object({
+  tools: z.array(ToolRouteNameSchema).default([]),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string().default(''),
+  backend: z.enum(['heuristic', 'dspy', 'langchain']).default('heuristic'),
 })
 
 /** Validates the normalized AI response from any adapter (stub, Nim, Anthropic). */
@@ -55,6 +93,7 @@ export const AIResponseSchema = z.object({
   })).default([]),
   stepVerifications: z.array(z.string()).optional().default([]),
   display: z.optional(DisplayHintsSchema),
+  tutorSections: z.optional(TutorSectionsSchema),
 })
 
 // ─── Gate 3: SymPy Response ─────────────────────────────────────────────────

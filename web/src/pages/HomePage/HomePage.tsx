@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { useMutation } from '@redwoodjs/web'
 import { Metadata } from '@redwoodjs/web'
@@ -13,6 +13,7 @@ import GraphSection from 'src/components/solve/GraphSection/GraphSection'
 import StatusIndicator from 'src/components/solve/StatusIndicator/StatusIndicator'
 import StepByStep from 'src/components/solve/StepByStep/StepByStep'
 import TheoremBox from 'src/components/solve/TheoremBox/TheoremBox'
+import TutorStructure from 'src/components/solve/TutorStructure/TutorStructure'
 import { useSolveStream } from 'src/hooks/useSolveStream'
 import type {
   ConversationMessage,
@@ -85,6 +86,18 @@ function parseGeogebraConfig(raw: unknown): GeoGebraPayload | null {
   return null
 }
 
+function summarizeSolveResult(result: SolveResultData): string {
+  if (result.mode === 'chat') {
+    return result.chatReply || 'Response received.'
+  }
+
+  return (
+    result.symbolStatement ||
+    result.symbolExpression ||
+    'Computation complete.'
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -108,60 +121,56 @@ const HomePage = () => {
     query: string,
     image?: { base64: string; mime: string; filename: string }
   ) => {
-    setInputQuery(query)
+    const trimmedQuery = query.trim()
+    const userMessage =
+      trimmedQuery || (image ? `Uploaded image: ${image.filename}` : query)
+
+    setInputQuery(userMessage)
     setSolveResult(null)
     setStatus('computing')
 
     // Add user message (guard against duplicate if handleSubmit fires twice)
     setMessages(prev => {
       const last = prev[prev.length - 1]
-      if (last?.role === 'user' && last?.content === query) return prev
-      return [...prev, { role: 'user', content: query }]
+      if (last?.role === 'user' && last?.content === userMessage) return prev
+      return [...prev, { role: 'user', content: userMessage }]
     })
 
     // Primary path: streaming endpoint
     try {
-      await stream.solve(query, image)
+      await stream.solve(trimmedQuery, image, conversationId)
     } catch {
       // If the stream hook itself throws unexpectedly, fall through
     }
-  }, [stream])
+  }, [conversationId, stream])
 
-  // React to stream state changes and sync local state
-  // When the stream completes, update solveResult and conversation
-  const prevStreamStatusRef = useCallback(() => {
-    // no-op — we handle this via derived state below
-  }, [])
-  void prevStreamStatusRef
+  useEffect(() => {
+    if (stream.status !== 'complete' || !stream.result) return
 
-  // Sync stream result into local state when complete
-  if (stream.status === 'complete' && stream.result && solveResult !== stream.result) {
+    setConversationId(stream.conversationId)
     setSolveResult(stream.result)
     setStatus(stream.result.status as PipelineStatus)
 
-    const result = stream.result
-    const summary = result.mode === 'chat'
-      ? result.chatReply || 'Response received.'
-      : result.symbolStatement || result.symbolExpression || 'Computation complete.'
-    setMessages(prev => {
-      // Guard against duplicate assistant messages
+    const summary = summarizeSolveResult(stream.result)
+    setMessages((prev) => {
       const last = prev[prev.length - 1]
       if (last?.role === 'assistant' && last?.content === summary) return prev
       return [...prev, { role: 'assistant', content: summary }]
     })
-  }
+  }, [stream.conversationId, stream.result, stream.status])
 
-  // Sync stream error into local state
-  if (stream.status === 'error' && stream.error && status !== 'error') {
+  useEffect(() => {
+    if (stream.status !== 'error' || !stream.error) return
+
     setStatus('error')
     setSolveResult(null)
-    setMessages(prev => {
+    setMessages((prev) => {
       const errMsg = 'Error: ' + stream.error
       const last = prev[prev.length - 1]
       if (last?.role === 'assistant' && last?.content === errMsg) return prev
       return [...prev, { role: 'assistant', content: errMsg }]
     })
-  }
+  }, [stream.error, stream.status])
 
   // GraphQL fallback handler (not wired to submit by default, available if needed)
   const handleGqlFallback = useCallback(async (
@@ -176,6 +185,7 @@ const HomePage = () => {
             conversationId,
             imageBase64: image?.base64,
             imageMime: image?.mime,
+            imageFilename: image?.filename,
           }
         }
       })
@@ -185,9 +195,7 @@ const HomePage = () => {
       setSolveResult(result)
       setStatus(result.status as PipelineStatus)
 
-      const summary = result.mode === 'chat'
-        ? result.chatReply || 'Response received.'
-        : result.symbolStatement || result.symbolExpression || 'Computation complete.'
+      const summary = summarizeSolveResult(result)
       setMessages(prev => [...prev, { role: 'assistant', content: summary }])
     } catch (err) {
       setStatus('error')
@@ -288,9 +296,12 @@ const HomePage = () => {
 
               {/* ------- CHAT / THEORY ------- */}
               {isChat && solveResult?.chatReply && (
-                <TheoremBox type="definition" title={inputQuery}>
-                  <MathText text={solveResult.chatReply} />
-                </TheoremBox>
+                <>
+                  <TheoremBox type="definition" title={inputQuery}>
+                    <MathText text={solveResult.chatReply} />
+                  </TheoremBox>
+                  <TutorStructure sections={solveResult.tutorSections} />
+                </>
               )}
 
               {/* ------- COMPUTATION ------- */}
@@ -300,6 +311,8 @@ const HomePage = () => {
                   {solveResult.symbolLatex && (
                     <KaTeXBlock latex={solveResult.symbolLatex} />
                   )}
+
+                  <TutorStructure sections={solveResult.tutorSections} />
 
                   {/* Step-by-step reasoning */}
                   {solveResult.chatSteps.length > 0 && (

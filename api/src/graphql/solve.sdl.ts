@@ -10,6 +10,7 @@ export const schema = gql`
     conversationId: String
     imageBase64: String
     imageMime: String
+    imageFilename: String
   }
 
   type Mutation {

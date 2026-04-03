@@ -18,6 +18,7 @@
 
 import { parseAIResponse, parseToolUseResponse } from '../pipeline/contracts'
 import type { MathQuery, NlpRouter } from '../pipeline/types'
+import { buildMathSystemPrompt } from './systemPrompt'
 
 // ─── Config (read from env at call time) ──────────────────────────────────
 
@@ -35,33 +36,7 @@ const ANTHROPIC_VERSION = '2023-06-01'
 // ─── System Prompt ────────────────────────────────────────────────────────
 // EXACT port of @system_prompt from the Elixir Anthropic module.
 
-const SYSTEM_PROMPT = `You are a verified-first math tutor at the level of Terence Tao and Richard Feynman.
-Use the provided tools to answer math questions. For computations, use sympy_compute.
-For conceptual/theory questions, use explain_concept. For verification or numerical work,
-use wolfram_alpha. For matrix/numerical methods, use octave_compute.
-Always show your reasoning. Prefer symbolic computation over numerical when possible.
-If a question can benefit from multiple tools, call them all.
-Also include a "display" object that hints the UI what to render:
-- showGraph: true if result should be graphed (functions, curves, distributions)
-- showSteps: true if step-by-step reasoning should be displayed
-- showProof: true if formal verification section is needed
-- showMatrix: true if matrix notation should be used
-- graphType: "2d" for y=f(x), "3d" for surfaces, "parametric" for parametric curves, "none" if no graph needed
-
-When including math expressions in chat_reply text, wrap them in $...$ for inline math or $$...$$ for display math. Example: "The derivative is $\\frac{d}{dx}[x^2] = 2x$".
-
-For computation mode, also include a "step_verifications" array. Each entry is a SymPy boolean expression (using Eq, simplify, etc.) that verifies the corresponding reasoning step. When evaluated by SymPy, each should return True if the step is correct.
-
-Example for "derivative of x^3":
-  "step_verifications": ["Eq(diff(x**3, x), 3*x**2)"]
-
-Example for normal distribution P(X > 12) with X~N(10,4):
-  "step_verifications": [
-    "Eq(sqrt(4), 2)",
-    "Eq((12-10)/2, 1)"
-  ]
-
-Keep step_verifications simple — one expression per reasoning step, using SymPy functions only (Eq, diff, integrate, simplify, sqrt, sin, cos, exp, log, symbols, Rational, factorial, binomial, stats.Normal if needed). If a step cannot be verified symbolically, omit it from the array.`
+const SYSTEM_PROMPT = buildMathSystemPrompt('anthropic')
 
 // ─── Tool Definitions ─────────────────────────────────────────────────────
 // EXACT port of @tools from the Elixir Anthropic module.
@@ -93,6 +68,41 @@ const TOOLS = [
               latex: { type: 'string' },
             },
             required: ['id', 'latex'],
+          },
+        },
+        step_verifications: {
+          type: 'array',
+          description:
+            'Optional SymPy boolean expressions that verify the reasoning steps',
+          items: { type: 'string' },
+        },
+        tutor_sections: {
+          type: 'object',
+          description: 'Structured first-principles teaching sections',
+          properties: {
+            problem_map: { type: 'string' },
+            first_principles: { type: 'string' },
+            formal_statement: { type: 'string' },
+            derivation: { type: 'string' },
+            worked_example: { type: 'string' },
+            misconception: { type: 'string' },
+            takeaways: { type: 'array', items: { type: 'string' } },
+            check_questions: { type: 'array', items: { type: 'string' } },
+            next_step: { type: 'string' },
+          },
+        },
+        display: {
+          type: 'object',
+          description: 'UI rendering hints for the frontend',
+          properties: {
+            showGraph: { type: 'boolean' },
+            showSteps: { type: 'boolean' },
+            showProof: { type: 'boolean' },
+            showMatrix: { type: 'boolean' },
+            graphType: {
+              type: 'string',
+              enum: ['2d', '3d', 'parametric', 'none'],
+            },
           },
         },
       },
@@ -154,6 +164,40 @@ const TOOLS = [
           type: 'array',
           items: { type: 'string' },
           description: 'Step-by-step reasoning leading to the explanation',
+        },
+        step_verifications: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional symbolic checks for the explanation steps',
+        },
+        tutor_sections: {
+          type: 'object',
+          description: 'Structured first-principles teaching sections',
+          properties: {
+            problem_map: { type: 'string' },
+            first_principles: { type: 'string' },
+            formal_statement: { type: 'string' },
+            derivation: { type: 'string' },
+            worked_example: { type: 'string' },
+            misconception: { type: 'string' },
+            takeaways: { type: 'array', items: { type: 'string' } },
+            check_questions: { type: 'array', items: { type: 'string' } },
+            next_step: { type: 'string' },
+          },
+        },
+        display: {
+          type: 'object',
+          description: 'UI rendering hints for the frontend',
+          properties: {
+            showGraph: { type: 'boolean' },
+            showSteps: { type: 'boolean' },
+            showProof: { type: 'boolean' },
+            showMatrix: { type: 'boolean' },
+            graphType: {
+              type: 'string',
+              enum: ['2d', '3d', 'parametric', 'none'],
+            },
+          },
         },
       },
       required: ['explanation', 'reasoning_steps'],

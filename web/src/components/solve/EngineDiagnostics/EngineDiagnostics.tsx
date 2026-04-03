@@ -60,6 +60,20 @@ const EngineDiagnostics = ({ result }: Props) => {
             <TimingCell label="S \u2192 G" ms={result.timingGraphMs} />
           </div>
 
+          {result.toolRoute && (
+            <div className="space-y-1">
+              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.24em] text-stone-400">
+                Planner
+              </span>
+              <p className="font-mono text-xs text-stone-600">
+                {result.toolRoute.backend} :: {result.toolRoute.tools.join(' → ') || 'no tools'}
+              </p>
+              <p className="font-mono text-xs text-stone-500">
+                confidence={result.toolRoute.confidence.toFixed(2)}
+              </p>
+            </div>
+          )}
+
           {/* Proof state */}
           {result.proofState && (
             <div className="space-y-1">

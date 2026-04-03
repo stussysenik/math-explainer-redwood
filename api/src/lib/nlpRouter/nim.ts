@@ -17,6 +17,7 @@
 
 import { parseAIResponse } from '../pipeline/contracts'
 import type { MathQuery, NlpRouter } from '../pipeline/types'
+import { buildMathSystemPrompt } from './systemPrompt'
 
 // ─── Config (read from env at call time) ──────────────────────────────────
 
@@ -34,41 +35,7 @@ function nimConfig() {
 // ─── System Prompt ────────────────────────────────────────────────────────
 // EXACT port of @system_prompt from the Elixir NIM module.
 
-const SYSTEM_PROMPT = `You translate a natural-language math request into a strict JSON object for a verified-first symbolic pipeline.
-Return JSON only. No markdown. No prose outside the JSON object.
-Rules:
-- mode must be either "computation" or "chat".
-- Use mode "chat" for conceptual, definitional, or explanatory questions that should be answered in prose.
-- For mode "chat", include reasoning_steps and chat_reply only. Do not invent graph payloads or SymPy code.
-- Use mode "computation" only when the request can be turned into a concrete symbolic computation.
-- If an image is present, transcribe the visible mathematics before choosing the symbolic form.
-- If the image is ambiguous, say so in reasoning_steps and choose the most likely expression conservatively.
-- reasoning_steps: 1-4 short strings that describe the math transformation.
-- For mode "computation", include raw_latex, sympy_executable, and desmos_expressions.
-- raw_latex: KaTeX-ready LaTeX for the intended result.
-- sympy_executable: a single SymPy-safe expression using diff, integrate, simplify, expand, factor, sin, cos, tan, exp, log, sqrt, x, y, or z.
-- desmos_expressions: at least one object with id and latex. Use y=<expression> for graphable results.
-Also include a "display" object that hints the UI what to render:
-- showGraph: true if result should be graphed (functions, curves, distributions)
-- showSteps: true if step-by-step reasoning should be displayed
-- showProof: true if formal verification section is needed
-- showMatrix: true if matrix notation should be used
-- graphType: "2d" for y=f(x), "3d" for surfaces, "parametric" for parametric curves, "none" if no graph needed
-
-When including math expressions in chat_reply text, wrap them in $...$ for inline math or $$...$$ for display math. Example: "The derivative is $\\frac{d}{dx}[x^2] = 2x$".
-
-For computation mode, also include a "step_verifications" array. Each entry is a SymPy boolean expression (using Eq, simplify, etc.) that verifies the corresponding reasoning step. When evaluated by SymPy, each should return True if the step is correct.
-
-Example for "derivative of x^3":
-  "step_verifications": ["Eq(diff(x**3, x), 3*x**2)"]
-
-Example for normal distribution P(X > 12) with X~N(10,4):
-  "step_verifications": [
-    "Eq(sqrt(4), 2)",
-    "Eq((12-10)/2, 1)"
-  ]
-
-Keep step_verifications simple — one expression per reasoning step, using SymPy functions only (Eq, diff, integrate, simplify, sqrt, sin, cos, exp, log, symbols, Rational, factorial, binomial, stats.Normal if needed). If a step cannot be verified symbolically, omit it from the array.`
+const SYSTEM_PROMPT = buildMathSystemPrompt('nim')
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 

@@ -17,11 +17,13 @@ import type { MutationResolvers } from 'types/graphql'
 import { db } from 'src/lib/db'
 import { logger } from 'src/lib/logger'
 import { runPipeline } from 'src/lib/pipeline'
+import { assistantContentFromPipeline } from 'src/lib/solveResult'
 
 // ─── Mutations ─────────────────────────────────────────────────────────────
 
 export const solve: MutationResolvers['solve'] = async ({ input }) => {
-  const { query, conversationId, imageBase64, imageMime } = input
+  const { query, conversationId, imageBase64, imageMime, imageFilename } = input
+  const userMessageContent = query || `Uploaded image: ${imageFilename || 'image'}`
 
   // ─── 1. Find or create conversation ────────────────────────────────
   let conversation: { id: string }
@@ -37,7 +39,9 @@ export const solve: MutationResolvers['solve'] = async ({ input }) => {
   } else {
     // Create a new conversation with the query as the title
     const title =
-      query.length > 60 ? query.slice(0, 57) + '...' : query || 'New Conversation'
+      query.length > 60
+        ? query.slice(0, 57) + '...'
+        : query || imageFilename || 'New Conversation'
     conversation = await db.conversation.create({
       data: { title },
     })
@@ -48,7 +52,10 @@ export const solve: MutationResolvers['solve'] = async ({ input }) => {
     data: {
       conversationId: conversation.id,
       role: 'user',
-      content: query,
+      content: userMessageContent,
+      hasImage: !!imageBase64,
+      imageMime: imageMime ?? null,
+      imageFilename: imageFilename ?? null,
     },
   })
 
@@ -83,12 +90,7 @@ export const solve: MutationResolvers['solve'] = async ({ input }) => {
   )
 
   // ─── 4. Build assistant message content ────────────────────────────
-  const assistantContent =
-    pipelineResult.mode === 'chat'
-      ? pipelineResult.chatReply ?? 'No response generated.'
-      : pipelineResult.symbol
-        ? `${pipelineResult.symbol.statement}\n\n$$${pipelineResult.symbol.latex}$$`
-        : 'Computation complete.'
+  const assistantContent = assistantContentFromPipeline(pipelineResult)
 
   // ─── 5. Persist assistant message + SolveResult in a transaction ──
   const assistantMessage = await db.message.create({
@@ -116,6 +118,8 @@ export const solve: MutationResolvers['solve'] = async ({ input }) => {
           symbolRaw: JSON.stringify({
             ...(pipelineResult.symbol?.raw ?? {}),
             stepVerificationResults: pipelineResult.stepVerificationResults ?? [],
+            toolRoute: pipelineResult.toolRoute ?? null,
+            engineResults: pipelineResult.engineResults ?? [],
           }),
 
           // Proof fields
@@ -149,25 +153,22 @@ export const solve: MutationResolvers['solve'] = async ({ input }) => {
     },
   })
 
-  // ─── 6. Create EngineResult for SymPy audit trail ─────────────────
+  // ─── 6. Create EngineResult audit trail ───────────────────────────
   const solveResult = assistantMessage.solveResult!
-  if (pipelineResult.timings.sympyMs > 0 || pipelineResult.usedSidecar) {
+  if (pipelineResult.engineResults && pipelineResult.engineResults.length > 0) {
     try {
-      await db.engineResult.create({
-        data: {
+      await db.engineResult.createMany({
+        data: pipelineResult.engineResults.map((engineResult) => ({
           solveResultId: solveResult.id,
-          engineName: 'sympy_compute',
-          status: pipelineResult.error ? 'error' : 'success',
-          result: JSON.stringify({
-            expression: pipelineResult.symbol?.expression ?? null,
-            latex: pipelineResult.symbol?.latex ?? null,
-            usedSidecar: pipelineResult.usedSidecar,
-          }),
-          durationMs: pipelineResult.timings.sympyMs,
-        },
+          engineName: engineResult.engineName,
+          toolUseId: engineResult.toolUseId ?? null,
+          status: engineResult.status,
+          result: JSON.stringify(engineResult.result),
+          durationMs: engineResult.durationMs,
+        })),
       })
     } catch (err) {
-      logger.warn({ err }, 'Failed to create EngineResult for sympy_compute')
+      logger.warn({ err }, 'Failed to create EngineResult audit trail')
     }
   }
 

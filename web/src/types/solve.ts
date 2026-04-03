@@ -44,6 +44,33 @@ export interface DisplayHints {
   graphType?: '2d' | '3d' | 'parametric' | 'none'
 }
 
+export interface TutorSections {
+  problemMap?: string
+  firstPrinciples?: string
+  formalStatement?: string
+  derivation?: string
+  workedExample?: string
+  misconception?: string
+  takeaways: string[]
+  checkQuestions: string[]
+  nextStep?: string
+}
+
+export interface ToolRoutePlan {
+  tools: string[]
+  confidence: number
+  reasoning: string
+  backend: 'heuristic' | 'dspy' | 'langchain'
+}
+
+export interface EngineResultRecord {
+  engineName: string
+  toolUseId?: string | null
+  status: 'success' | 'error' | 'timeout'
+  result: Record<string, unknown>
+  durationMs: number
+}
+
 export interface StepVerification {
   step: number
   verified: boolean
@@ -75,11 +102,26 @@ export interface SolveResultData {
   timingVerifyMs: number
   timingGraphMs: number
   error: string | null
+  toolRoute?: ToolRoutePlan
+  engineResults?: EngineResultRecord[]
   display?: DisplayHints
+  tutorSections?: TutorSections
   stepVerifications?: StepVerification[]
 }
 
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
+}
+
+export interface SolveStreamResponse {
+  conversationId: string | null
+  messageId: string | null
+  gates: Array<{
+    gate: string
+    status: 'pass' | 'fail' | 'skip'
+    data: Record<string, unknown>
+    timestamp: number
+  }>
+  result: SolveResultData
 }

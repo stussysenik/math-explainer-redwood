@@ -69,6 +69,43 @@ export interface DisplayHints {
   graphType?: '2d' | '3d' | 'parametric' | 'none'
 }
 
+export interface TutorSections {
+  problemMap?: string
+  firstPrinciples?: string
+  formalStatement?: string
+  derivation?: string
+  workedExample?: string
+  misconception?: string
+  takeaways: string[]
+  checkQuestions: string[]
+  nextStep?: string
+}
+
+export type ToolRouteName =
+  | 'sympy_compute'
+  | 'julia_compute'
+  | 'matlab_compute'
+  | 'octave_compute'
+  | 'wolfram_alpha'
+  | 'explain_concept'
+
+export type ToolRouteBackend = 'heuristic' | 'dspy' | 'langchain'
+
+export interface ToolRoutePlan {
+  tools: ToolRouteName[]
+  confidence: number
+  reasoning: string
+  backend: ToolRouteBackend
+}
+
+export interface EngineResultRecord {
+  engineName: string
+  toolUseId?: string | null
+  status: 'success' | 'error' | 'timeout'
+  result: Record<string, unknown>
+  durationMs: number
+}
+
 // ─── Pipeline Result ───────────────────────────────────────────────────────
 /** The complete output of a single pipeline run. */
 export interface PipelineResult {
@@ -88,6 +125,8 @@ export interface PipelineResult {
   error: string | null
   /** UI display hints from the AI response (optional). */
   display?: DisplayHints
+  /** Structured tutor-oriented explanation blocks. */
+  tutorSections?: TutorSections
   /** Step-by-step SymPy verification results. */
   stepVerificationResults?: Array<{
     step: number
@@ -95,6 +134,10 @@ export interface PipelineResult {
     sympyExpression: string
     sympyResult: string | null
   }>
+  /** Sidecar tool-planning result used for provenance and staged UI. */
+  toolRoute?: ToolRoutePlan
+  /** Engine-level audit trail emitted by the pipeline. */
+  engineResults?: EngineResultRecord[]
 }
 
 // ─── AI Response ───────────────────────────────────────────────────────────
@@ -107,6 +150,8 @@ export interface AIResponse {
   desmosExpressions: DesmosExpression[]
   chatReply: string | null
   toolCalls: ToolCall[]
+  display?: DisplayHints
+  tutorSections?: TutorSections
   stepVerifications?: string[]  // SymPy boolean expressions for each step
 }
 

@@ -10,14 +10,107 @@ import type {
   AIResponse,
   DesmosExpression,
   DesmosPayload,
+  DisplayHints,
   MathQuery,
   Symbol,
   SymPyResponse,
+  TutorSections,
   ToolCall,
 } from './types'
 
 // ─── Default Viewport ──────────────────────────────────────────────────────
 const DEFAULT_VIEWPORT = { xmin: -10, xmax: 10, ymin: -10, ymax: 10 }
+
+function parseDisplayHints(value: unknown): DisplayHints | undefined {
+  if (!value || typeof value !== 'object') return undefined
+
+  const display = value as Record<string, unknown>
+
+  return {
+    showGraph: Boolean(display.showGraph),
+    showSteps: display.showSteps !== false,
+    showProof: display.showProof !== false,
+    showMatrix:
+      typeof display.showMatrix === 'boolean' ? display.showMatrix : undefined,
+    graphType:
+      display.graphType === '2d' ||
+      display.graphType === '3d' ||
+      display.graphType === 'parametric' ||
+      display.graphType === 'none'
+        ? display.graphType
+        : undefined,
+  }
+}
+
+function parseStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+function parseTutorSections(value: unknown): TutorSections | undefined {
+  if (!value || typeof value !== 'object') return undefined
+
+  const raw = value as Record<string, unknown>
+
+  const tutorSections: TutorSections = {
+    problemMap:
+      typeof raw.problemMap === 'string'
+        ? raw.problemMap
+        : typeof raw.problem_map === 'string'
+          ? raw.problem_map
+          : undefined,
+    firstPrinciples:
+      typeof raw.firstPrinciples === 'string'
+        ? raw.firstPrinciples
+        : typeof raw.first_principles === 'string'
+          ? raw.first_principles
+          : undefined,
+    formalStatement:
+      typeof raw.formalStatement === 'string'
+        ? raw.formalStatement
+        : typeof raw.formal_statement === 'string'
+          ? raw.formal_statement
+          : undefined,
+    derivation:
+      typeof raw.derivation === 'string' ? raw.derivation : undefined,
+    workedExample:
+      typeof raw.workedExample === 'string'
+        ? raw.workedExample
+        : typeof raw.worked_example === 'string'
+          ? raw.worked_example
+          : undefined,
+    misconception:
+      typeof raw.misconception === 'string' ? raw.misconception : undefined,
+    takeaways: parseStringArray(raw.takeaways),
+    checkQuestions: parseStringArray(
+      raw.checkQuestions ?? raw.check_questions
+    ),
+    nextStep:
+      typeof raw.nextStep === 'string'
+        ? raw.nextStep
+        : typeof raw.next_step === 'string'
+          ? raw.next_step
+          : undefined,
+  }
+
+  const hasScalarContent = [
+    tutorSections.problemMap,
+    tutorSections.firstPrinciples,
+    tutorSections.formalStatement,
+    tutorSections.derivation,
+    tutorSections.workedExample,
+    tutorSections.misconception,
+    tutorSections.nextStep,
+  ].some(Boolean)
+
+  const hasContent =
+    hasScalarContent ||
+    tutorSections.takeaways.length > 0 ||
+    tutorSections.checkQuestions.length > 0
+
+  return hasContent ? tutorSections : undefined
+}
 
 // ─── parseAIResponse ───────────────────────────────────────────────────────
 
@@ -80,6 +173,11 @@ export function parseAIResponse(
       ? (payload.stepVerifications as string[])
       : []
 
+  const display = parseDisplayHints(payload.display)
+  const tutorSections = parseTutorSections(
+    payload.tutorSections ?? payload.tutor_sections
+  )
+
   return {
     mode,
     reasoningSteps,
@@ -95,6 +193,8 @@ export function parseAIResponse(
       >,
       toolUseId: String(tc.toolUseId ?? tc.tool_use_id ?? ''),
     })),
+    display,
+    tutorSections,
     stepVerifications,
   }
 }
@@ -136,6 +236,7 @@ export function buildSymbol(
       mode: aiResponse.mode,
       rawLatex: aiResponse.rawLatex,
       sympyExecutable: aiResponse.sympyExecutable,
+      tutorSections: aiResponse.tutorSections ?? null,
     },
     sympy_response: sympyResponse ?? null,
     verified_desmos_expressions:
@@ -144,7 +245,7 @@ export function buildSymbol(
         : null,
   }
 
-  const statement = `Result for: ${query.text}`
+  const statement = `Result for: ${query.text.trim() || 'uploaded image'}`
 
   return {
     statement,
@@ -263,6 +364,10 @@ export function parseToolUseResponse(
         desmosExpressions,
         chatReply: null,
         toolCalls,
+        display: parseDisplayHints(input.display),
+        tutorSections: parseTutorSections(
+          input.tutor_sections ?? input.tutorSections
+        ),
         stepVerifications: Array.isArray(input.step_verifications)
           ? (input.step_verifications as string[])
           : [],
@@ -288,6 +393,10 @@ export function parseToolUseResponse(
             ? input.explanation
             : textParts,
         toolCalls,
+        display: parseDisplayHints(input.display),
+        tutorSections: parseTutorSections(
+          input.tutor_sections ?? input.tutorSections
+        ),
         stepVerifications: Array.isArray(input.step_verifications)
           ? (input.step_verifications as string[])
           : [],

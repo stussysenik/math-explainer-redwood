@@ -11,8 +11,19 @@
  * visual gate-by-gate effect.
  *
  * Endpoint: POST /api/solveStream
- * Body:     { query: string, imageBase64?: string, imageMime?: string }
- * Response: { gates: GateEvent[], result: PipelineResult }
+ * Body:     {
+ *             query: string,
+ *             conversationId?: string,
+ *             imageBase64?: string,
+ *             imageMime?: string,
+ *             imageFilename?: string
+ *           }
+ * Response: {
+ *             conversationId: string | null,
+ *             messageId: string | null,
+ *             gates: GateEvent[],
+ *             result: ClientSolveResult
+ *           }
  *
  * Educational notes:
  *   - The `notify` callback collects gate events into an array rather
@@ -29,6 +40,10 @@ import { logger } from 'src/lib/logger'
 import { runPipeline } from 'src/lib/pipeline'
 import { SolveInputSchema } from 'src/lib/pipeline/schemas'
 import type { GateEvent } from 'src/lib/pipeline/schemas'
+import {
+  assistantContentFromPipeline,
+  toClientSolveResult,
+} from 'src/lib/solveResult'
 
 // ─── CORS & Response Helpers ────────────────────────────────────────────────
 
@@ -77,7 +92,8 @@ export const handler = async (event: APIGatewayEvent, _context: Context) => {
     return jsonResponse(400, { error: 'Validation failed', details: errors })
   }
 
-  const { query, imageBase64, imageMime } = inputResult.data
+  const { query, conversationId, imageBase64, imageMime, imageFilename } =
+    inputResult.data
 
   // ─── 2. Collect gate events via notify callback ─────────────────────
   const gates: GateEvent[] = []
@@ -114,37 +130,55 @@ export const handler = async (event: APIGatewayEvent, _context: Context) => {
   }
 
   // ─── 4. Persist to DB (mirrors solve service) ──────────────────────
+  let resolvedConversationId = conversationId ?? null
+  let resolvedMessageId: string | null = null
+  let solveResultId: string | undefined
+  const userMessageContent = query || `Uploaded image: ${imageFilename ?? 'image'}`
+
   try {
-    // Create conversation
-    const title =
-      query.length > 60 ? query.slice(0, 57) + '...' : query || 'New Conversation'
-    const conversation = await db.conversation.create({
-      data: { title },
-    })
+    let conversation = conversationId
+      ? await db.conversation.findUnique({
+          where: { id: conversationId },
+        })
+      : null
+
+    if (!conversation) {
+      if (conversationId) {
+        logger.warn(
+          { conversationId },
+          'solveStream conversation not found, creating a new one'
+        )
+      }
+
+      const title =
+        query.length > 60
+          ? query.slice(0, 57) + '...'
+          : query || imageFilename || 'New Conversation'
+      conversation = await db.conversation.create({
+        data: { title },
+      })
+    }
+
+    resolvedConversationId = conversation.id
 
     // Create user message
     await db.message.create({
       data: {
         conversationId: conversation.id,
         role: 'user',
-        content: query,
+        content: userMessageContent,
+        hasImage: !!imageBase64,
+        imageMime: imageMime ?? null,
+        imageFilename: imageFilename ?? null,
       },
     })
-
-    // Build assistant message content
-    const assistantContent =
-      pipelineResult.mode === 'chat'
-        ? pipelineResult.chatReply ?? 'No response generated.'
-        : pipelineResult.symbol
-          ? `${pipelineResult.symbol.statement}\n\n$$${pipelineResult.symbol.latex}$$`
-          : 'Computation complete.'
 
     // Persist assistant message + SolveResult
     const assistantMessage = await db.message.create({
       data: {
         conversationId: conversation.id,
         role: 'assistant',
-        content: assistantContent,
+        content: assistantContentFromPipeline(pipelineResult),
         solveResult: {
           create: {
             mode: pipelineResult.mode,
@@ -161,6 +195,8 @@ export const handler = async (event: APIGatewayEvent, _context: Context) => {
             symbolRaw: JSON.stringify({
               ...(pipelineResult.symbol?.raw ?? {}),
               stepVerificationResults: pipelineResult.stepVerificationResults ?? [],
+              toolRoute: pipelineResult.toolRoute ?? null,
+              engineResults: pipelineResult.engineResults ?? [],
             }),
             proofVerified: pipelineResult.proof?.verified ?? false,
             proofState: pipelineResult.proof?.state ?? null,
@@ -181,22 +217,21 @@ export const handler = async (event: APIGatewayEvent, _context: Context) => {
         solveResult: true,
       },
     })
+    resolvedMessageId = assistantMessage.id
+    solveResultId = assistantMessage.solveResult?.id
 
-    // Engine result for SymPy audit trail
-    if (pipelineResult.timings.sympyMs > 0 || pipelineResult.usedSidecar) {
+    // Engine-level audit trail
+    if (pipelineResult.engineResults && pipelineResult.engineResults.length > 0) {
       const solveResult = assistantMessage.solveResult!
-      await db.engineResult.create({
-        data: {
+      await db.engineResult.createMany({
+        data: pipelineResult.engineResults.map((engineResult) => ({
           solveResultId: solveResult.id,
-          engineName: 'sympy_compute',
-          status: pipelineResult.error ? 'error' : 'success',
-          result: JSON.stringify({
-            expression: pipelineResult.symbol?.expression ?? null,
-            latex: pipelineResult.symbol?.latex ?? null,
-            usedSidecar: pipelineResult.usedSidecar,
-          }),
-          durationMs: pipelineResult.timings.sympyMs,
-        },
+          engineName: engineResult.engineName,
+          toolUseId: engineResult.toolUseId ?? null,
+          status: engineResult.status,
+          result: JSON.stringify(engineResult.result),
+          durationMs: engineResult.durationMs,
+        })),
       })
     }
 
@@ -216,7 +251,9 @@ export const handler = async (event: APIGatewayEvent, _context: Context) => {
 
   // ─── 5. Return collected gates + result ─────────────────────────────
   return jsonResponse(200, {
+    conversationId: resolvedConversationId,
+    messageId: resolvedMessageId,
     gates,
-    result: pipelineResult,
+    result: toClientSolveResult(pipelineResult, { id: solveResultId }),
   })
 }

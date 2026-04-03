@@ -3,6 +3,8 @@
 from fastapi import FastAPI
 
 from .health import router as health_router
+from .routers.julia import router as julia_router
+from .routers.matlab import router as matlab_router
 from .routers.tool_router import router as tool_router
 from .routers.wolfram import router as wolfram_router
 from .routers.octave import router as octave_router
@@ -19,6 +21,8 @@ app.include_router(health_router)
 app.include_router(tool_router, prefix="/api")
 app.include_router(wolfram_router, prefix="/api")
 app.include_router(octave_router, prefix="/api")
+app.include_router(julia_router, prefix="/api")
+app.include_router(matlab_router, prefix="/api")
 app.include_router(evaluate_router, prefix="/api")
 app.include_router(sympy_router, prefix="/api")
 

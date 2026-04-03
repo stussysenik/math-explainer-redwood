@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 
-import type { SolveResultData } from 'src/types/solve'
+import type { SolveResultData, SolveStreamResponse } from 'src/types/solve'
 
 /**
  * Describes a single gate event in the solve pipeline.
@@ -23,6 +23,8 @@ interface SolveStreamState {
   result: SolveResultData | null
   error: string | null
   currentGate: string | null
+  conversationId: string | null
+  messageId: string | null
 }
 
 /**
@@ -34,7 +36,7 @@ interface SolveStreamState {
  *
  * Usage:
  *   const { status, gates, result, error, currentGate, solve, reset } = useSolveStream()
- *   await solve('integrate x^2 dx')
+ *   await solve('integrate x^2 dx', undefined, 'conversation_id')
  */
 export function useSolveStream() {
   const [state, setState] = useState<SolveStreamState>({
@@ -43,26 +45,31 @@ export function useSolveStream() {
     result: null,
     error: null,
     currentGate: null,
+    conversationId: null,
+    messageId: null,
   })
   const abortRef = useRef<AbortController | null>(null)
 
   const solve = useCallback(
     async (
       query: string,
-      image?: { base64: string; mime: string; filename: string }
+      image?: { base64: string; mime: string; filename: string },
+      conversationId?: string | null
     ) => {
       // Abort any in-flight request
       abortRef.current?.abort()
       const controller = new AbortController()
       abortRef.current = controller
 
-      setState({
+      setState((prev) => ({
         status: 'streaming',
         gates: [],
         result: null,
         error: null,
         currentGate: 'input',
-      })
+        conversationId: conversationId ?? prev.conversationId,
+        messageId: null,
+      }))
 
       try {
         const res = await fetch('/.redwood/functions/solveStream', {
@@ -70,8 +77,10 @@ export function useSolveStream() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             query,
+            conversationId: conversationId ?? undefined,
             imageBase64: image?.base64,
             imageMime: image?.mime,
+            imageFilename: image?.filename,
           }),
           signal: controller.signal,
         })
@@ -86,7 +95,7 @@ export function useSolveStream() {
           return
         }
 
-        const data = await res.json()
+        const data = (await res.json()) as SolveStreamResponse
 
         // Animate gates sequentially with small delays for visual feedback
         const gates: GateEvent[] = data.gates || []
@@ -106,6 +115,8 @@ export function useSolveStream() {
           status: 'complete',
           result: data.result,
           currentGate: null,
+          conversationId: data.conversationId,
+          messageId: data.messageId,
         }))
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
@@ -127,6 +138,8 @@ export function useSolveStream() {
       result: null,
       error: null,
       currentGate: null,
+      conversationId: null,
+      messageId: null,
     })
   }, [])
 

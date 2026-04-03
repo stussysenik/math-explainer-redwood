@@ -9,6 +9,11 @@ import type { GateEvent } from 'src/hooks/useSolveStream'
  */
 const GATE_DEFS: Record<string, (data: Record<string, unknown>) => string> = {
   input: () => 'Input validated',
+  planner: (d) => {
+    const backend = (d.backend as string) || 'planner'
+    const tools = Array.isArray(d.tools) ? d.tools.join(' → ') : 'default route'
+    return `Planner: ${backend} → ${tools}`
+  },
   routing: (d) => {
     const adapter = (d.adapter as string) || '?'
     const mode = (d.mode as string) || '?'
@@ -19,15 +24,21 @@ const GATE_DEFS: Record<string, (data: Record<string, unknown>) => string> = {
     const expr = (d.expression as string) || 'done'
     return `SymPy: ${expr}`
   },
+  symbol: () => 'Symbol normalized',
   verify: (d) => {
     const state = d.verified ? 'true' : (d.state as string) || 'pending'
     return `Verified: ${state}`
   },
   graph: () => 'Graph ready',
+  step_verification: (d) => {
+    const verified = typeof d.verified === 'number' ? d.verified : '?'
+    const total = typeof d.total === 'number' ? d.total : '?'
+    return `Step checks: ${verified}/${total}`
+  },
 }
 
 /** Ordered list of gates for rendering future (not-yet-reached) gates. */
-const GATE_ORDER = ['input', 'routing', 'sympy', 'verify', 'graph']
+const GATE_ORDER = ['input', 'planner', 'routing', 'sympy', 'symbol', 'verify', 'graph', 'step_verification']
 
 interface Props {
   gates: GateEvent[]

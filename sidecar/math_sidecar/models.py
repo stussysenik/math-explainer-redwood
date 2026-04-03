@@ -1,6 +1,6 @@
 """Pydantic schemas for sidecar API."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ToolRouteRequest(BaseModel):
@@ -12,6 +12,7 @@ class ToolRouteResponse(BaseModel):
     tools: list[str]
     confidence: float
     reasoning: str
+    backend: str = "heuristic"
 
 
 class WolframRequest(BaseModel):
@@ -35,6 +36,21 @@ class OctaveRequest(BaseModel):
 class OctaveResponse(BaseModel):
     result: str | None = None
     error: str | None = None
+
+
+class ScientificComputeRequest(BaseModel):
+    code: str
+    description: str = ""
+    expected_result: str | None = None
+
+
+class ScientificComputeResponse(BaseModel):
+    engine: str
+    ok: bool
+    result: str | None = None
+    error: str | None = None
+    duration_ms: int | None = None
+    metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
 class EvaluateRequest(BaseModel):

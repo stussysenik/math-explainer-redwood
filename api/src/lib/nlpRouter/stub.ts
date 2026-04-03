@@ -219,8 +219,25 @@ function matchExplicitExpression(q: string): AIResponse | null {
 // ─── Stub Router ───────────────────────────────────────────────────────────
 
 export const stubRouter: NlpRouter = {
-  async toContract(query: MathQuery) {
+  async toContract(query: MathQuery, opts) {
     const q = normalize(query.text)
+    const hasVisionPayload = !!(
+      opts &&
+      typeof opts === 'object' &&
+      'vision' in opts &&
+      opts.vision
+    )
+
+    if (q === '' && hasVisionPayload) {
+      return {
+        ok: true as const,
+        response: chatResponse(
+          'I received an image upload, but the stub router cannot extract math from images yet. Add a short prompt describing the problem or configure a live vision-capable adapter.',
+          ['Recognize the request as image-first input in stub mode.']
+        ),
+        adapter: 'stub',
+      }
+    }
 
     // 1. Empty query → default parabola
     if (q === '') {
@@ -265,9 +282,9 @@ export const stubRouter: NlpRouter = {
       ok: true as const,
       response: chatResponse(
         'I need a specific math problem to work on. Try something like:\n\n' +
-          '- "Find P(X > 12) where X is normal with mean 10 and variance 4"\n' +
-          '- "Derivative of sin(x) * e^x"\n' +
-          '- "Solve y\'\' + 4y = 0 with y(0)=1"\n' +
+          '- "Find $P(X > 12)$ where $X$ is normal with mean $10$ and variance $4$"\n' +
+          '- "Derivative of $\\sin(x) \\cdot e^x$"\n' +
+          '- "Solve $y\'\' + 4y = 0$ with $y(0)=1$"\n' +
           '- Or upload an image of a textbook problem using the paperclip icon\n\n' +
           'You can also ask conceptual questions like "What is the Central Limit Theorem?"',
         ['Query did not match a known computation or theory pattern']

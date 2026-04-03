@@ -1,3 +1,4 @@
+import MathText from 'src/components/math/MathText/MathText'
 import type { ConversationMessage } from 'src/types/solve'
 
 interface Props {
@@ -14,7 +15,10 @@ const ConversationThread = ({ messages }: Props) => {
       {displayMessages.map((msg, idx) => (
         <div key={idx} className={`rounded-xl px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-white text-stone-900' : 'bg-stone-100 text-stone-700'}`}>
           <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-stone-400">{msg.role}</span>
-          <p className="mt-1 line-clamp-2">{msg.content}</p>
+          <MathText
+            text={msg.content}
+            className="mt-1 line-clamp-2 text-sm leading-6 text-inherit"
+          />
         </div>
       ))}
     </div>
